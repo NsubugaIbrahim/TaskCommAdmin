@@ -9,6 +9,7 @@ import com.example.taskcommadmin.ui.screen.chat.ChatScreen
 import com.example.taskcommadmin.ui.screen.dashboard.DashboardScreen
 import com.example.taskcommadmin.ui.screen.task.TaskDetailScreen
 import com.example.taskcommadmin.ui.screen.task.TaskListScreen
+import com.example.taskcommadmin.ui.screen.task.InstructionTaskListScreen
 import com.example.taskcommadmin.ui.screen.user.UserDetailScreen
 import com.example.taskcommadmin.ui.screen.user.UserListScreen
 import com.example.taskcommadmin.ui.screen.instruction.InstructionListScreen
@@ -72,6 +73,16 @@ fun NavGraph(navController: NavHostController) {
         }
         
         composable(
+            route = Screen.InstructionTaskList.route + "/{instructionId}"
+        ) { backStackEntry ->
+            val instructionId = backStackEntry.arguments?.getString("instructionId") ?: ""
+            InstructionTaskListScreen(
+                navController = navController,
+                instructionId = instructionId
+            )
+        }
+
+        composable(
             route = Screen.Chat.route + "/{taskId}"
         ) { backStackEntry ->
             val taskId = backStackEntry.arguments?.getString("taskId") ?: ""
@@ -92,4 +103,5 @@ sealed class Screen(val route: String) {
     object TaskDetail : Screen("task_detail")
     object Chat : Screen("chat")
     object InstructionList : Screen("instruction_list")
+    object InstructionTaskList : Screen("instruction_task_list")
 }

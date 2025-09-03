@@ -124,7 +124,6 @@ fun TaskListScreen(
                         ?: instructionId
                     val newTask = Task(
                         instructionId = targetInstructionId,
-                        adminId = "admin", // This should come from auth
                         title = title,
                         description = description,
                         priority = priority
@@ -309,16 +308,21 @@ fun AddTaskDialog(
                 Spacer(modifier = Modifier.height(8.dp))
                 
                 Text("Priority", style = MaterialTheme.typography.bodyMedium)
-                Row {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     listOf("low", "medium", "high").forEach { priorityOption ->
                         Row(
-                            modifier = Modifier.padding(end = 16.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             RadioButton(
                                 selected = priority == priorityOption,
                                 onClick = { priority = priorityOption }
                             )
+                            Spacer(modifier = Modifier.width(4.dp))
                             Text(priorityOption.capitalize())
                         }
                     }

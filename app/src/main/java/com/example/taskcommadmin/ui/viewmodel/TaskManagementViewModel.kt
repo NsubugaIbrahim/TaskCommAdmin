@@ -185,7 +185,7 @@ private data class TaskRow(
         fun fromModel(t: Task): TaskRow = TaskRow(
             id = if (t.taskId.isBlank()) null else t.taskId,
             instructionId = t.instructionId,
-            adminId = t.adminId,
+            adminId = t.adminId.takeIf { it.isNotBlank() },
             title = t.title,
             description = t.description,
             status = t.status,

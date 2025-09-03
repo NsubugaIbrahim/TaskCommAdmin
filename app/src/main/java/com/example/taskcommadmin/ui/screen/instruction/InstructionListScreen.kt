@@ -188,7 +188,7 @@ fun InstructionListScreen(
                     items(instructions) { item ->
                         InstructionCard(
                             instruction = item,
-                            onOpenTasks = { navController.navigate(Screen.TaskList.route + "/${'$'}{userId}") }
+                            onOpenTasks = { navController.navigate(Screen.InstructionTaskList.route + "/" + (item.id ?: "")) }
                         )
                     }
                 }

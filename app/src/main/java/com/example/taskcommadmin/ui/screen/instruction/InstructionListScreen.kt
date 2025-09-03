@@ -24,6 +24,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import android.util.Log
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -34,18 +35,46 @@ fun InstructionListScreen(
     var isLoading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var instructions by remember { mutableStateOf<List<InstructionRow>>(emptyList()) }
+    var userName by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
 
     suspend fun fetchInstructionsForUser(targetUserId: String): List<InstructionRow> {
         return withContext(Dispatchers.IO) {
             val client = SupabaseClientProvider.getClient(navController.context)
             val postgrest = client.pluginManager.getPlugin(Postgrest)
-            postgrest["instructions"].select {
-                filter { eq("user_id", targetUserId) }
-                order(column = "created_at", order = Order.DESCENDING)
-                // optional cap to avoid huge payloads
-                limit(200)
-            }.decodeList<InstructionRow>()
+            val uid = targetUserId.trim()
+            val fkCandidates = listOf("user_id", "userId", "profile_id", "profileId", "uid")
+            for (column in fkCandidates) {
+                try {
+                    val rows = postgrest["instructions"].select {
+                        filter { eq(column, uid) }
+                        order(column = "created_at", order = Order.DESCENDING)
+                        limit(200)
+                    }.decodeList<InstructionRow>()
+                    val msg = "Tried column '" + column + "' -> fetched " + rows.size + " rows"
+                    if (column == "user_id") Log.w("InstructionList", msg) else Log.d("InstructionList", msg)
+                    if (rows.isNotEmpty()) return@withContext rows
+                } catch (e: Exception) {
+                    Log.e("InstructionList", "Fetch by column '" + column + "' failed: " + (e.message ?: "error"))
+                }
+            }
+
+            // Fallback: fetch recent rows and filter client-side using any id field we can read
+            return@withContext try {
+                val rows = postgrest["instructions"].select {
+                    order(column = "created_at", order = Order.DESCENDING)
+                    limit(200)
+                }.decodeList<InstructionRow>()
+                val filtered = rows.filter { r ->
+                    listOfNotNull(r.userId, r.userIdCamel, r.profileId, r.profileIdCamel)
+                        .any { it == targetUserId }
+                }
+                Log.d("InstructionList", "Fallback unfiltered fetch: total=" + rows.size + ", matched=" + filtered.size)
+                filtered
+            } catch (e: Exception) {
+                Log.e("InstructionList", "Fallback fetch failed: " + (e.message ?: "error"))
+                emptyList()
+            }
         }
     }
 
@@ -53,6 +82,20 @@ fun InstructionListScreen(
         isLoading = true
         error = null
         try {
+            // Fetch user name
+            try {
+                val client = SupabaseClientProvider.getClient(navController.context)
+                val postgrest = client.pluginManager.getPlugin(Postgrest)
+                val profile = withContext(Dispatchers.IO) {
+                    postgrest["profiles"].select {
+                        filter { eq("id", userId.trim()) }
+                        limit(1)
+                    }.decodeList<ProfileRow>()
+                }.firstOrNull()
+                userName = (profile?.name ?: profile?.email ?: "User").trim()
+            } catch (_: Exception) { userName = "User" }
+
+            // Fetch instructions
             val rows = fetchInstructionsForUser(userId)
             instructions = rows
         } catch (e: Exception) {
@@ -65,7 +108,11 @@ fun InstructionListScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Instructions") },
+                title = { 
+                    val count = instructions.size
+                    val titleText = (if (userName.isBlank()) "User" else userName) + " • " + count.toString() + " Instructions"
+                    Text(titleText)
+                },
                 navigationIcon = {
                     IconButton(onClick = { navController.navigateUp() }) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
@@ -232,6 +279,10 @@ private data class InstructionRow(
     val title: String? = null,
     val description: String? = null,
     @SerialName("user_id") val userId: String? = null,
+    // Alternative possible FK column names so client-side filter can match
+    @SerialName("userId") val userIdCamel: String? = null,
+    @SerialName("profile_id") val profileId: String? = null,
+    @SerialName("profileId") val profileIdCamel: String? = null,
     val status: String? = null,
     @SerialName("created_at") val createdAt: String? = null
 ) {
@@ -246,5 +297,13 @@ private data class InstructionRow(
         }
     }
 }
+
+@Serializable
+private data class ProfileRow(
+    val id: String? = null,
+    val email: String? = null,
+    val role: String? = null,
+    val name: String? = null
+)
 
 

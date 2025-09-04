@@ -105,7 +105,7 @@ fun TaskListScreen(
                     items(tasks) { task ->
                         TaskCard(
                             task = task,
-                            onTaskClick = { navController.navigate(Screen.TaskDetail.route + "/${task.taskId}") },
+                            onTaskClick = { navController.navigate(Screen.Chat.route + "/${task.taskId}") },
                             onStatusChange = { newStatus ->
                                 viewModel.updateTask(ctx, task.copy(status = newStatus))
                             }

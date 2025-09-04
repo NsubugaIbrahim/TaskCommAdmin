@@ -6,6 +6,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Send
@@ -15,6 +16,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 
@@ -23,13 +25,21 @@ import com.example.taskcommadmin.data.model.ChatMessage
 import com.example.taskcommadmin.ui.viewmodel.ChatViewModel
 import java.text.SimpleDateFormat
 import java.util.*
+import com.example.taskcommadmin.data.SupabaseClientProvider
+import io.github.jan.supabase.postgrest.Postgrest
+import io.github.jan.supabase.gotrue.Auth
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import android.util.Log
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
     navController: NavController,
     taskId: String,
-    viewModel: ChatViewModel = ChatViewModel()
+    viewModel: ChatViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
 ) {
     val messages by viewModel.messages.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -37,9 +47,59 @@ fun ChatScreen(
     
     var messageText by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
+    var userName by remember { mutableStateOf("") }
+    var taskTitle by remember { mutableStateOf("") }
+    var adminUid by remember { mutableStateOf("") }
+    var adminDisplayName by remember { mutableStateOf("Admin") }
     
     LaunchedEffect(taskId) {
-        viewModel.loadMessages(taskId)
+        Log.d("AdminChatScreen", "Opening chat for task=" + taskId)
+        viewModel.loadMessages(navController.context, taskId)
+        // Fetch end-user name for header (task -> instruction -> profiles)
+        try {
+            val client = SupabaseClientProvider.getClient(navController.context)
+            val postgrest = client.pluginManager.getPlugin(Postgrest)
+            val auth = client.pluginManager.getPlugin(Auth)
+            val taskRow = withContext(Dispatchers.IO) {
+                postgrest["tasks"].select {
+                    filter { eq("id", taskId) }
+                    limit(1)
+                }.decodeList<TaskHeaderRow>()
+            }.firstOrNull()
+            taskTitle = taskRow?.title ?: ""
+            val instructionId = taskRow?.instructionId
+            if (!instructionId.isNullOrBlank()) {
+                val userId = withContext(Dispatchers.IO) {
+                    postgrest["instructions"].select {
+                        filter { eq("id", instructionId) }
+                        limit(1)
+                    }.decodeList<InstructionHeaderRow>()
+                }.firstOrNull()?.userId
+                if (!userId.isNullOrBlank()) {
+                    val profile = withContext(Dispatchers.IO) {
+                        postgrest["profiles"].select {
+                            filter { eq("id", userId) }
+                            limit(1)
+                        }.decodeList<ProfileHeaderRow>()
+                    }.firstOrNull()
+                    userName = (profile?.name ?: profile?.email ?: "User").trim()
+                    Log.d("AdminChatScreen", "Header userName=" + userName)
+                }
+            }
+            // Resolve admin uid and display name for sending
+            val uid = auth.currentSessionOrNull()?.user?.id
+            if (!uid.isNullOrBlank()) {
+                adminUid = uid
+                val adminProfile = withContext(Dispatchers.IO) {
+                    postgrest["profiles"].select {
+                        filter { eq("id", uid) }
+                        limit(1)
+                    }.decodeList<ProfileHeaderRow>()
+                }.firstOrNull()
+                adminDisplayName = (adminProfile?.name ?: adminProfile?.email ?: "Admin").trim()
+                Log.d("AdminChatScreen", "Admin uid=" + adminUid + ", name=" + adminDisplayName)
+            }
+        } catch (_: Exception) { }
     }
     
     LaunchedEffect(messages.size) {
@@ -51,7 +111,21 @@ fun ChatScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Task Chat") },
+                title = {
+                    Column {
+                        Text(
+                            text = if (userName.isBlank()) "Chat" else userName,
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        if (taskTitle.isNotBlank()) {
+                            Text(
+                                text = "Task: " + taskTitle,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
+                            )
+                        }
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = { navController.navigateUp() }) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
@@ -61,7 +135,13 @@ fun ChatScreen(
                     IconButton(onClick = { /* Export chat */ }) {
                         Icon(Icons.Default.Share, contentDescription = "Export")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color(0xFF4B2E83),
+                    titleContentColor = Color.White,
+                    navigationIconContentColor = Color.White,
+                    actionIconContentColor = Color.White
+                )
             )
         },
         bottomBar = {
@@ -70,11 +150,13 @@ fun ChatScreen(
                 onMessageTextChange = { messageText = it },
                 onSendMessage = {
                     if (messageText.isNotBlank()) {
+                        // TODO: wire real admin id/name from AuthViewModel
                         viewModel.sendTextMessage(
+                            navController.context,
                             taskId = taskId,
                             text = messageText,
-                            senderId = "admin", // This should come from auth
-                            senderName = "Admin"
+                            senderId = adminUid,
+                            senderName = adminDisplayName
                         )
                         messageText = ""
                     }
@@ -102,7 +184,7 @@ fun ChatScreen(
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Spacer(modifier = Modifier.height(8.dp))
-                    Button(onClick = { viewModel.loadMessages(taskId) }) {
+                    Button(onClick = { viewModel.loadMessages(navController.context, taskId) }) {
                         Text("Retry")
                     }
                 }
@@ -114,19 +196,41 @@ fun ChatScreen(
                     .padding(paddingValues)
                     .padding(horizontal = 16.dp),
                 state = listState,
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(vertical = 16.dp)
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                contentPadding = PaddingValues(vertical = 12.dp)
             ) {
-                items(messages) { message ->
+                item(key = "spacer-top") { Spacer(modifier = Modifier.height(1.dp)) }
+                items(messages, key = { it.messageId }) { message ->
                     ChatMessageItem(
                         message = message,
                         isFromAdmin = message.senderRole == "admin"
                     )
                 }
+                item(key = "spacer-bottom") { Spacer(modifier = Modifier.height(1.dp)) }
             }
         }
     }
 }
+
+@kotlinx.serialization.Serializable
+private data class TaskHeaderRow(
+    val id: String? = null,
+    @kotlinx.serialization.SerialName("instruction_id") val instructionId: String? = null,
+    @kotlinx.serialization.SerialName("title") val title: String? = null
+)
+
+@kotlinx.serialization.Serializable
+private data class InstructionHeaderRow(
+    val id: String? = null,
+    @kotlinx.serialization.SerialName("user_id") val userId: String? = null
+)
+
+@kotlinx.serialization.Serializable
+private data class ProfileHeaderRow(
+    val id: String? = null,
+    val email: String? = null,
+    val name: String? = null
+)
 
 @Composable
 fun ChatMessageItem(
@@ -134,69 +238,51 @@ fun ChatMessageItem(
     isFromAdmin: Boolean
 ) {
     val alignment = if (isFromAdmin) Alignment.End else Alignment.Start
-    val backgroundColor = if (isFromAdmin) {
-        MaterialTheme.colorScheme.primary
-    } else {
-        MaterialTheme.colorScheme.surfaceVariant
-    }
-    val textColor = if (isFromAdmin) {
-        MaterialTheme.colorScheme.onPrimary
-    } else {
-        MaterialTheme.colorScheme.onSurface
-    }
-    
-    Column(
+    val bubbleColor = if (isFromAdmin) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
+    val bubbleText = if (isFromAdmin) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+
+    Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = alignment
+        horizontalArrangement = if (isFromAdmin) Arrangement.End else Arrangement.Start
     ) {
-        Card(
-            modifier = Modifier.widthIn(max = 280.dp),
-            colors = CardDefaults.cardColors(containerColor = backgroundColor)
-        ) {
+        val shape = if (isFromAdmin) {
+            RoundedCornerShape(topStart = 16.dp, topEnd = 4.dp, bottomEnd = 16.dp, bottomStart = 16.dp)
+        } else {
+            RoundedCornerShape(topStart = 4.dp, topEnd = 16.dp, bottomEnd = 16.dp, bottomStart = 16.dp)
+        }
+        val screenWidth = LocalConfiguration.current.screenWidthDp
+        val maxBubbleWidth = (screenWidth * 0.7f).dp
+        Surface(color = bubbleColor, shape = shape) {
             Column(
-                modifier = Modifier.padding(12.dp)
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
             ) {
-                if (message.senderName.isNotBlank()) {
+                if (message.senderName.isNotBlank() && !isFromAdmin) {
                     Text(
                         text = message.senderName,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = textColor.copy(alpha = 0.7f)
+                        style = MaterialTheme.typography.labelSmall,
+                        color = bubbleText.copy(alpha = 0.8f)
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                 }
-                
-                Text(
-                    text = message.text,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = textColor
-                )
-                
-                if (message.mediaUrl != null) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    // Handle media display (image, file, etc.)
+                Row(
+                    verticalAlignment = Alignment.Bottom
+                ) {
                     Text(
-                        text = "📎 ${message.fileName ?: "File"}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = textColor.copy(alpha = 0.8f)
+                        text = message.text + "  ",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = bubbleText
+                    )
+                    Text(
+                        text = SimpleDateFormat("HH:mm", Locale.getDefault()).format(message.timestamp.toDate()),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = bubbleText.copy(alpha = 0.8f)
                     )
                 }
-                
-                Spacer(modifier = Modifier.height(4.dp))
-                
-                Text(
-                    text = SimpleDateFormat("HH:mm", Locale.getDefault())
-                        .format(message.timestamp.toDate()),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = textColor.copy(alpha = 0.6f),
-                    textAlign = TextAlign.End,
-                    modifier = Modifier.fillMaxWidth()
-                )
             }
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatInputBar(
     messageText: String,
@@ -212,37 +298,40 @@ fun ChatInputBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.Bottom
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onAttachFile) {
-                Icon(Icons.Default.Share, contentDescription = "Attach File")
+                Icon(Icons.Default.Share, contentDescription = "Attach file")
             }
             
-            OutlinedTextField(
+            TextField(
                 value = messageText,
                 onValueChange = onMessageTextChange,
-                placeholder = { Text("Type a message...") },
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = 44.dp),
+                placeholder = { Text("Type a message…") },
                 maxLines = 4,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                shape = RoundedCornerShape(24.dp),
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent,
+                    disabledIndicatorColor = Color.Transparent
                 )
             )
             
             Spacer(modifier = Modifier.width(8.dp))
             
-            FloatingActionButton(
+            FilledIconButton(
                 onClick = onSendMessage,
-                modifier = Modifier.size(48.dp),
-                containerColor = MaterialTheme.colorScheme.primary
+                shape = RoundedCornerShape(16.dp)
             ) {
-                Icon(
-                    Icons.Default.Send,
-                    contentDescription = "Send",
-                    tint = MaterialTheme.colorScheme.onPrimary
-                )
+                Icon(Icons.Default.Send, contentDescription = "Send")
             }
         }
     }

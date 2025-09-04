@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.io.InputStream
+import android.util.Log
 
 class ChatViewModel : ViewModel() {
     private val chatRepository = ChatRepository()
@@ -25,16 +26,18 @@ class ChatViewModel : ViewModel() {
     
     private var currentTaskId: String? = null
     
-    fun loadMessages(taskId: String) {
+    fun loadMessages(context: android.content.Context, taskId: String) {
         currentTaskId = taskId
         viewModelScope.launch {
             _isLoading.value = true
             _error.value = null
             try {
-                chatRepository.getMessagesByTask(taskId).collect { messageList ->
+                chatRepository.getMessagesByTask(context, taskId).collect { messageList ->
+                    Log.d("AdminChatVM", "Emitting messages: count=" + messageList.size)
                     _messages.value = messageList
                 }
             } catch (e: Exception) {
+                Log.e("AdminChatVM", "loadMessages error: " + (e.message ?: "error"))
                 _error.value = e.message ?: "Failed to load messages"
             } finally {
                 _isLoading.value = false
@@ -43,6 +46,7 @@ class ChatViewModel : ViewModel() {
     }
     
     fun sendTextMessage(
+        context: android.content.Context,
         taskId: String,
         text: String,
         senderId: String,
@@ -61,11 +65,13 @@ class ChatViewModel : ViewModel() {
                     fileType = "text"
                 )
                 
-                val messageId = chatRepository.sendMessage(message)
+                val messageId = chatRepository.sendMessage(context, message)
                 if (messageId == null) {
+                    Log.e("AdminChatVM", "sendTextMessage failed")
                     _error.value = "Failed to send message"
                 }
             } catch (e: Exception) {
+                Log.e("AdminChatVM", "sendTextMessage exception: " + (e.message ?: "error"))
                 _error.value = e.message ?: "Send message failed"
             } finally {
                 _isLoading.value = false
@@ -74,6 +80,7 @@ class ChatViewModel : ViewModel() {
     }
     
     fun sendFileMessage(
+        context: android.content.Context,
         taskId: String,
         inputStream: InputStream,
         fileName: String,
@@ -98,7 +105,7 @@ class ChatViewModel : ViewModel() {
                         fileName = fileName
                     )
                     
-                    val messageId = chatRepository.sendMessage(message)
+                    val messageId = chatRepository.sendMessage(context, message)
                     if (messageId == null) {
                         _error.value = "Failed to send file message"
                     }
@@ -113,10 +120,10 @@ class ChatViewModel : ViewModel() {
         }
     }
     
-    fun markMessageAsRead(messageId: String) {
+    fun markMessageAsRead(context: android.content.Context, messageId: String) {
         viewModelScope.launch {
             try {
-                chatRepository.markMessageAsRead(messageId)
+                chatRepository.markMessageAsRead(context, messageId)
             } catch (e: Exception) {
                 // Silent fail for read status
             }

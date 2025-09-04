@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.example.taskcommadmin.ui.navigation.Screen
 import com.example.taskcommadmin.data.SupabaseClientProvider
 import io.github.jan.supabase.postgrest.Postgrest
 import kotlinx.serialization.SerialName
@@ -124,7 +125,12 @@ fun InstructionTaskListScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(tasks) { row ->
-                        TaskRowCard(row)
+                        TaskRowCard(row) {
+                            val taskId = row.id ?: ""
+                            if (taskId.isNotBlank()) {
+                                navController.navigate(Screen.Chat.route + "/" + taskId)
+                            }
+                        }
                     }
                 }
             }
@@ -167,9 +173,13 @@ fun InstructionTaskListScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun TaskRowCard(row: TaskRow) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+private fun TaskRowCard(row: TaskRow, onClick: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        onClick = onClick
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()

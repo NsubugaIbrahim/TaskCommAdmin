@@ -87,6 +87,7 @@ fun ChatScreen(
                         }.decodeList<ProfileHeaderRow>()
                     }.firstOrNull()
                     userName = (profile?.name ?: profile?.email ?: "User").trim()
+                    if (userName.isBlank()) userName = "User"
                     Log.d("AdminChatScreen", "Header userName=" + userName)
                 }
             }
@@ -101,6 +102,7 @@ fun ChatScreen(
                     }.decodeList<ProfileHeaderRow>()
                 }.firstOrNull()
                 adminDisplayName = (adminProfile?.name ?: adminProfile?.email ?: "Admin").trim()
+                if (adminDisplayName.isBlank()) adminDisplayName = "Admin"
                 Log.d("AdminChatScreen", "Admin uid=" + adminUid + ", name=" + adminDisplayName)
             }
         } catch (_: Exception) { }

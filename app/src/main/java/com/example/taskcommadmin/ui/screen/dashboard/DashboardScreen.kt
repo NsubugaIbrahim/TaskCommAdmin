@@ -2,25 +2,17 @@ package com.example.taskcommadmin.ui.screen.dashboard
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.ExitToApp
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.runtime.rememberCoroutineScope
-
 import androidx.navigation.NavController
 import com.example.taskcommadmin.ui.navigation.Screen
 import com.example.taskcommadmin.ui.viewmodel.AuthViewModel
-import com.example.taskcommadmin.data.repository.UserRepository
-import kotlinx.coroutines.launch
 import com.example.taskcommadmin.data.SupabaseClientProvider
 import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.gotrue.Auth
@@ -33,6 +25,7 @@ import kotlinx.coroutines.withContext
 private data class ProfileRow(
     val id: String? = null,
     val email: String? = null,
+    val name: String? = null,
     val role: String? = null
 )
 
@@ -46,286 +39,301 @@ private data class InstructionRow(
     val status: String? = null
 )
 
+@Serializable
+private data class TaskRow(
+    val id: String? = null,
+    val title: String? = null,
+    val description: String? = null,
+    val status: String? = null
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
     navController: NavController,
     authViewModel: AuthViewModel = AuthViewModel()
 ) {
-    val userRepository = remember { UserRepository() }
-    val scope = rememberCoroutineScope()
-    val ctx = LocalContext.current
-    
-    var testResult by remember { mutableStateOf<String?>(null) }
-    var loading by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    var adminName by remember { mutableStateOf("Admin") }
+    var stats by remember { mutableStateOf(DashboardStats()) }
+    var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
-    var nonAdminUsers by remember { mutableStateOf<List<ProfileRow>>(emptyList()) }
-    var instructions by remember { mutableStateOf<List<InstructionRow>>(emptyList()) }
 
     LaunchedEffect(Unit) {
-        loading = true
-        error = null
         try {
-            val client = SupabaseClientProvider.getClient(ctx)
+            val client = SupabaseClientProvider.getClient(context)
             val postgrest = client.pluginManager.getPlugin(Postgrest)
-            // Non-admin users
-            val users = withContext(Dispatchers.IO) {
-                postgrest["profiles"].select {
-                    filter { eq("role", "user") }
-                }.decodeList<ProfileRow>()
+            val auth = client.pluginManager.getPlugin(Auth)
+            
+            // Get admin profile
+            val currentUser = auth.currentSessionOrNull()?.user
+            if (currentUser != null) {
+                val profile = withContext(Dispatchers.IO) {
+                    postgrest["profiles"].select {
+                        filter { eq("id", currentUser.id) }
+                        limit(1)
+                    }.decodeList<ProfileRow>()
+                }.firstOrNull()
+                
+                adminName = profile?.name ?: profile?.email ?: "Admin"
+                
+                // Get dashboard statistics
+                val userCount = withContext(Dispatchers.IO) {
+                    postgrest["profiles"].select {
+                        filter { eq("role", "user") }
+                    }.decodeList<ProfileRow>().size.toLong()
+                }
+                
+                val instructionCount = withContext(Dispatchers.IO) {
+                    postgrest["instructions"].select { }.decodeList<InstructionRow>().size.toLong()
+                }
+                
+                val taskCount = withContext(Dispatchers.IO) {
+                    postgrest["tasks"].select { }.decodeList<TaskRow>().size.toLong()
+                }
+                
+                stats = DashboardStats(
+                    userCount = userCount,
+                    instructionCount = instructionCount,
+                    taskCount = taskCount
+                )
             }
-            nonAdminUsers = users
-            // Instructions
-            val instr = withContext(Dispatchers.IO) {
-                postgrest["instructions"].select {
-                    // order by latest if supported in DSL; otherwise rely on default
-                }.decodeList<InstructionRow>()
-            }
-            instructions = instr
         } catch (e: Exception) {
-            error = e.message ?: "Failed to load data from Supabase"
+            error = e.message ?: "Failed to load dashboard data"
         } finally {
             loading = false
         }
     }
+    
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("TaskComm Admin Dashboard") },
+                title = { 
+                    Column {
+                        Text(
+                            text = "TaskComm Admin",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Welcome, $adminName",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                },
                 actions = {
-                    IconButton(onClick = { authViewModel.signOut(ctx) }) {
+                    IconButton(onClick = { navController.navigate(Screen.Search.route) }) {
+                        Icon(Icons.Default.Search, contentDescription = "Search")
+                    }
+                    IconButton(onClick = { navController.navigate(Screen.Profile.route) }) {
+                        Icon(Icons.Default.Person, contentDescription = "Profile")
+                    }
+                    IconButton(onClick = { authViewModel.signOut(context) }) {
                         Icon(Icons.Default.ExitToApp, contentDescription = "Sign Out")
                     }
                 }
             )
         }
     ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Text(
-                text = "Welcome to TaskComm Admin",
-                style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
-            if (loading) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            }
-            if (error != null) {
-                Text(text = error!!, color = MaterialTheme.colorScheme.error)
-            }
-            
-            // Firebase Test Buttons
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+        if (loading) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
             ) {
-                Button(
-                    onClick = {
-                        scope.launch {
-                            testResult = "Testing Firebase connection..."
-                            val success = userRepository.testFirebaseConnection()
-                            testResult = if (success) "Firebase connection successful!" else "Firebase connection failed!"
-                        }
+                CircularProgressIndicator()
+            }
+        } else if (error != null) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = error!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(onClick = { /* Retry logic */ }) {
+                        Text("Retry")
                     }
+                }
+            }
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Statistics Cards
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Text("Test Firebase")
+                    StatCard(
+                        title = "Users",
+                        value = stats.userCount.toString(),
+                        icon = Icons.Default.People,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.weight(1f)
+                    )
+                    StatCard(
+                        title = "Instructions",
+                        value = stats.instructionCount.toString(),
+                        icon = Icons.Default.Description,
+                        color = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.weight(1f)
+                    )
+                    StatCard(
+                        title = "Tasks",
+                        value = stats.taskCount.toString(),
+                        icon = Icons.Default.Assignment,
+                        color = MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier.weight(1f)
+                    )
                 }
                 
-                Button(
-                    onClick = {
-                        scope.launch {
-                            testResult = "Testing users collection..."
-                            val success = userRepository.testUsersCollection()
-                            testResult = if (success) "Users collection accessible!" else "Users collection access failed!"
-                        }
-                    }
-                ) {
-                    Text("Test Users Collection")
-                }
-            }
-            
-            if (testResult != null) {
+                // Quick Actions
                 Text(
-                    text = testResult!!,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (testResult!!.contains("successful")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                    text = "Quick Actions",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
                 )
-            }
-            
-            Spacer(modifier = Modifier.height(32.dp))
-            
-            // User Management Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                onClick = { navController.navigate(Screen.UserList.route) }
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.Person,
-                        contentDescription = null,
-                        modifier = Modifier.size(48.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column {
-                        Text(
-                            text = "User Management",
-                            style = MaterialTheme.typography.titleLarge
-                        )
-                        Text(
-                            text = "Manage users, view profiles, and handle accounts",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-
-            // Instructions Overview Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                onClick = { /* Navigate to instructions overview */ }
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.List,
-                        contentDescription = null,
-                        modifier = Modifier.size(48.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column {
-                        Text(
-                            text = "Instructions Overview",
-                            style = MaterialTheme.typography.titleLarge
-                        )
-                        Text(
-                            text = "View all instructions from users",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-
-            // Supabase: Recent Instructions
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(text = "Recent Instructions (Supabase)", style = MaterialTheme.typography.titleLarge)
-                        TextButton(onClick = {
-                            scope.launch {
-                                loading = true; error = null
-                                try {
-                                    val client = SupabaseClientProvider.getClient(ctx)
-                                    val postgrest = client.pluginManager.getPlugin(Postgrest)
-                                    instructions = withContext(Dispatchers.IO) {
-                                        postgrest["instructions"].select { }.decodeList()
-                                    }
-                                } catch (e: Exception) {
-                                    error = e.message
-                                } finally { loading = false }
-                            }
-                        }) { Text("Refresh") }
-                    }
-                    if (instructions.isEmpty()) {
-                        Text(text = "No instructions found.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    } else {
-                        instructions.take(10).forEach { ins ->
-                            val uid = ins.user_id ?: ins.userId ?: ""
-                            Text(text = (ins.title ?: "<no title>") + "  —  user=" + uid + "  —  status=" + (ins.status ?: ""))
-                        }
-                    }
-                }
-            }
-            
-            // Task Management Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                onClick = { /* Navigate to task management */ }
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.CheckCircle,
-                        contentDescription = null,
-                        modifier = Modifier.size(48.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column {
-                        Text(
-                            text = "Task Management",
-                            style = MaterialTheme.typography.titleLarge
-                        )
-                        Text(
-                            text = "Create and manage tasks for users",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-            
-            // Communication Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                onClick = { /* Navigate to communication center */ }
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.Email,
-                        contentDescription = null,
-                        modifier = Modifier.size(48.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column {
-                        Text(
-                            text = "Communication Center",
-                            style = MaterialTheme.typography.titleLarge
-                        )
-                        Text(
-                            text = "Chat with users and manage communications",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
+                
+                // User Management Card
+                DashboardCard(
+                    title = "User Management",
+                    description = "Manage users, view profiles, and handle accounts",
+                    icon = Icons.Default.People,
+                    onClick = { navController.navigate(Screen.UserList.route) }
+                )
+                
+                // Task Management Card
+                DashboardCard(
+                    title = "Task Management",
+                    description = "Create and manage tasks for users",
+                    icon = Icons.Default.Assignment,
+                    onClick = { /* Navigate to task management */ }
+                )
+                
+                // Instructions Overview Card
+                DashboardCard(
+                    title = "Instructions Overview",
+                    description = "View all instructions from users",
+                    icon = Icons.Default.Description,
+                    onClick = { /* Navigate to instructions overview */ }
+                )
+                
+                // Communication Center Card
+                DashboardCard(
+                    title = "Communication Center",
+                    description = "Chat with users and manage communications",
+                    icon = Icons.Default.Chat,
+                    onClick = { /* Navigate to communication center */ }
+                )
+                
+                // Search Card
+                DashboardCard(
+                    title = "Global Search",
+                    description = "Search across users, tasks, instructions, and messages",
+                    icon = Icons.Default.Search,
+                    onClick = { navController.navigate(Screen.Search.route) }
+                )
             }
         }
     }
 }
+
+@Composable
+private fun StatCard(
+    title: String,
+    value: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    color: androidx.compose.ui.graphics.Color,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier,
+        colors = CardDefaults.cardColors(
+            containerColor = color.copy(alpha = 0.1f)
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                modifier = Modifier.size(32.dp),
+                tint = color
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = value,
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = color
+            )
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun DashboardCard(
+    title: String,
+    description: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        onClick = onClick
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                modifier = Modifier.size(48.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Icon(
+                Icons.Default.ArrowForward,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+private data class DashboardStats(
+    val userCount: Long = 0,
+    val instructionCount: Long = 0,
+    val taskCount: Long = 0
+)

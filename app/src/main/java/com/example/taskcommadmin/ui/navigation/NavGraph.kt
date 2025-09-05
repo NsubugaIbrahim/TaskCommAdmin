@@ -7,6 +7,8 @@ import androidx.navigation.compose.composable
 import com.example.taskcommadmin.ui.screen.auth.LoginScreen
 import com.example.taskcommadmin.ui.screen.chat.ChatScreen
 import com.example.taskcommadmin.ui.screen.dashboard.DashboardScreen
+import com.example.taskcommadmin.ui.screen.profile.ProfileScreen
+import com.example.taskcommadmin.ui.screen.search.SearchScreen
 import com.example.taskcommadmin.ui.screen.task.TaskDetailScreen
 import com.example.taskcommadmin.ui.screen.task.TaskListScreen
 import com.example.taskcommadmin.ui.screen.task.InstructionTaskListScreen
@@ -26,6 +28,14 @@ fun NavGraph(navController: NavHostController) {
         
         composable(Screen.Dashboard.route) {
             DashboardScreen(navController = navController)
+        }
+        
+        composable(Screen.Profile.route) {
+            ProfileScreen(navController = navController)
+        }
+        
+        composable(Screen.Search.route) {
+            SearchScreen(navController = navController)
         }
         
         composable(Screen.UserList.route) {
@@ -97,6 +107,8 @@ fun NavGraph(navController: NavHostController) {
 sealed class Screen(val route: String) {
     object Login : Screen("login")
     object Dashboard : Screen("dashboard")
+    object Profile : Screen("profile")
+    object Search : Screen("search")
     object UserList : Screen("user_list")
     object UserDetail : Screen("user_detail")
     object TaskList : Screen("task_list")

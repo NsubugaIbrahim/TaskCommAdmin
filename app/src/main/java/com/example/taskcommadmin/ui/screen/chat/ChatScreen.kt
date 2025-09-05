@@ -330,26 +330,29 @@ fun ChatScreen(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("Reply")
                         }
-                        TextButton(
-                            onClick = {
-                                editText = selectedMessage!!.text
-                                showEditDialog = true
-                                showContextMenu = false
+                        // Only show edit/delete options for admin's own messages
+                        if (selectedMessage!!.senderRole == "admin") {
+                            TextButton(
+                                onClick = {
+                                    editText = selectedMessage!!.text
+                                    showEditDialog = true
+                                    showContextMenu = false
+                                }
+                            ) {
+                                Icon(Icons.Default.Edit, contentDescription = null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Edit Message")
                             }
-                        ) {
-                            Icon(Icons.Default.Edit, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Edit Message")
-                        }
-                        TextButton(
-                            onClick = {
-                                viewModel.deleteMessage(navController.context, selectedMessage!!.messageId)
-                                showContextMenu = false
+                            TextButton(
+                                onClick = {
+                                    viewModel.deleteMessage(navController.context, selectedMessage!!.messageId)
+                                    showContextMenu = false
+                                }
+                            ) {
+                                Icon(Icons.Default.Delete, contentDescription = null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Delete Message")
                             }
-                        ) {
-                            Icon(Icons.Default.Delete, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Delete Message")
                         }
                     }
                 },

@@ -1,6 +1,8 @@
 package com.example.taskcommadmin.ui.screen.chat
 
-import androidx.compose.foundation.background
+import android.annotation.SuppressLint
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -8,18 +10,17 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Send
-import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.navigation.NavController
 import com.example.taskcommadmin.data.model.ChatMessage
 import com.example.taskcommadmin.ui.viewmodel.ChatViewModel
@@ -31,8 +32,6 @@ import io.github.jan.supabase.gotrue.Auth
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import android.util.Log
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalConfiguration
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -51,6 +50,11 @@ fun ChatScreen(
     var taskTitle by remember { mutableStateOf("") }
     var adminUid by remember { mutableStateOf("") }
     var adminDisplayName by remember { mutableStateOf("Admin") }
+    var showContextMenu by remember { mutableStateOf(false) }
+    var selectedMessage by remember { mutableStateOf<ChatMessage?>(null) }
+    var showEditDialog by remember { mutableStateOf(false) }
+    var editText by remember { mutableStateOf("") }
+    var replyToMessage by remember { mutableStateOf<ChatMessage?>(null) }
     
     LaunchedEffect(taskId) {
         Log.d("AdminChatScreen", "Opening chat for task=" + taskId)
@@ -121,7 +125,7 @@ fun ChatScreen(
                             Text(
                                 text = "Task: " + taskTitle,
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
+                                color = Color.White.copy(alpha = 0.8f)
                             )
                         }
                     }
@@ -145,24 +149,67 @@ fun ChatScreen(
             )
         },
         bottomBar = {
+            Column {
+                // Reply indicator above input
+                if (replyToMessage != null) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Reply, 
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Replying to ${if (replyToMessage!!.senderRole == "admin") adminDisplayName else userName}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                                Text(
+                                    text = replyToMessage!!.text.take(50) + if (replyToMessage!!.text.length > 50) "..." else "",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            }
+                            IconButton(onClick = { replyToMessage = null }) {
+                                Icon(Icons.Default.Close, contentDescription = "Cancel reply")
+                            }
+                        }
+                    }
+                }
+                
             ChatInputBar(
                 messageText = messageText,
                 onMessageTextChange = { messageText = it },
                 onSendMessage = {
                     if (messageText.isNotBlank()) {
-                        // TODO: wire real admin id/name from AuthViewModel
+                            val finalText = if (replyToMessage != null) {
+                                val senderName = if (replyToMessage!!.senderRole == "admin") adminDisplayName else userName
+                                "↩️ $senderName: \"${replyToMessage!!.text.take(30)}...\"\n\n$messageText"
+                            } else messageText
                         viewModel.sendTextMessage(
-                            navController.context,
+                                navController.context,
                             taskId = taskId,
-                            text = messageText,
-                            senderId = adminUid,
-                            senderName = adminDisplayName
+                                text = finalText,
+                                senderId = adminUid,
+                                senderName = adminDisplayName
                         )
                         messageText = ""
+                            replyToMessage = null
                     }
                 },
                 onAttachFile = { /* Handle file attachment */ }
             )
+            }
         }
     ) { paddingValues ->
         if (isLoading && messages.isEmpty()) {
@@ -199,19 +246,188 @@ fun ChatScreen(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
                 contentPadding = PaddingValues(vertical = 12.dp)
             ) {
-                item(key = "spacer-top") { Spacer(modifier = Modifier.height(1.dp)) }
-                items(messages, key = { it.messageId }) { message ->
+                // Task name bubble at top
+                item(key = "task-header") {
+                    if (taskTitle.isNotBlank()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.secondaryContainer,
+                                shape = RoundedCornerShape(16.dp)
+                            ) {
+                                Text(
+                                    text = taskTitle,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                }
+                
+                // Group messages by date
+                val groupedMessages = messages.groupBy { 
+                    SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(it.timestamp.toDate())
+                }
+                
+                groupedMessages.forEach { (date, messagesForDate) ->
+                    // Date header
+                    item(key = "date-$date") {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text(
+                                    text = formatDateHeader(date),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                    
+                    // Messages for this date
+                    items(messagesForDate, key = { it.messageId }) { message ->
                     ChatMessageItem(
                         message = message,
-                        isFromAdmin = message.senderRole == "admin"
-                    )
+                            isFromAdmin = message.senderRole == "admin",
+                            onLongClick = {
+                                selectedMessage = message
+                                showContextMenu = true
+                            }
+                        )
+                    }
                 }
-                item(key = "spacer-bottom") { Spacer(modifier = Modifier.height(1.dp)) }
+            }
+        }
+        
+        // Context menu for message actions
+        if (showContextMenu && selectedMessage != null) {
+            AlertDialog(
+                onDismissRequest = { showContextMenu = false },
+                title = { Text("Message Actions") },
+                text = {
+                    Column {
+                        TextButton(
+                            onClick = {
+                                replyToMessage = selectedMessage
+                                showContextMenu = false
+                            }
+                        ) {
+                            Icon(Icons.Default.Reply, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Reply")
+                        }
+                        TextButton(
+                            onClick = {
+                                editText = selectedMessage!!.text
+                                showEditDialog = true
+                                showContextMenu = false
+                            }
+                        ) {
+                            Icon(Icons.Default.Edit, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Edit Message")
+                        }
+                        TextButton(
+                            onClick = {
+                                viewModel.deleteMessage(navController.context, selectedMessage!!.messageId)
+                                showContextMenu = false
+                            }
+                        ) {
+                            Icon(Icons.Default.Delete, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Delete Message")
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showContextMenu = false }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
+        
+        // Edit dialog
+        if (showEditDialog && selectedMessage != null) {
+            AlertDialog(
+                onDismissRequest = { showEditDialog = false },
+                title = { Text("Edit Message") },
+                text = {
+                    OutlinedTextField(
+                        value = editText,
+                        onValueChange = { editText = it },
+                        label = { Text("Message") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            if (editText.isNotBlank()) {
+                                viewModel.editMessage(navController.context, selectedMessage!!.messageId, editText)
+                            }
+                            showEditDialog = false
+                        }
+                    ) {
+                        Text("Save")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showEditDialog = false }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
+        
+        // Reply indicator
+        if (replyToMessage != null) {
+            Surface(
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.Reply, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Replying to:",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                        Text(
+                            text = replyToMessage!!.text.take(50) + "...",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
+                    IconButton(onClick = { replyToMessage = null }) {
+                        Icon(Icons.Default.Close, contentDescription = "Cancel reply")
+                    }
+                }
             }
         }
     }
 }
 
+@SuppressLint("UnsafeOptInUsageError")
 @kotlinx.serialization.Serializable
 private data class TaskHeaderRow(
     val id: String? = null,
@@ -219,12 +435,14 @@ private data class TaskHeaderRow(
     @kotlinx.serialization.SerialName("title") val title: String? = null
 )
 
+@SuppressLint("UnsafeOptInUsageError")
 @kotlinx.serialization.Serializable
 private data class InstructionHeaderRow(
     val id: String? = null,
     @kotlinx.serialization.SerialName("user_id") val userId: String? = null
 )
 
+@SuppressLint("UnsafeOptInUsageError")
 @kotlinx.serialization.Serializable
 private data class ProfileHeaderRow(
     val id: String? = null,
@@ -232,11 +450,14 @@ private data class ProfileHeaderRow(
     val name: String? = null
 )
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ChatMessageItem(
     message: ChatMessage,
-    isFromAdmin: Boolean
+    isFromAdmin: Boolean,
+    onLongClick: () -> Unit = {}
 ) {
+    val haptic = LocalHapticFeedback.current
     val alignment = if (isFromAdmin) Alignment.End else Alignment.Start
     val bubbleColor = if (isFromAdmin) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
     val bubbleText = if (isFromAdmin) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
@@ -252,7 +473,21 @@ fun ChatMessageItem(
         }
         val screenWidth = LocalConfiguration.current.screenWidthDp
         val maxBubbleWidth = (screenWidth * 0.7f).dp
-        Surface(color = bubbleColor, shape = shape) {
+        Surface(
+            color = bubbleColor, 
+            shape = shape,
+            modifier = Modifier.combinedClickable(
+                onClick = {},
+                onDoubleClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onLongClick()
+                },
+                onLongClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onLongClick()
+                }
+            )
+        ) {
             Column(
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
             ) {
@@ -264,19 +499,61 @@ fun ChatMessageItem(
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                 }
+                // Check if this is a reply message
+                val isReply = message.text.startsWith("↩️")
+                val (replyPart, actualMessage) = if (isReply) {
+                    val parts = message.text.split("\n\n", limit = 2)
+                    if (parts.size == 2) parts[0] to parts[1] else "" to message.text
+                } else {
+                    "" to message.text
+                }
+                
+                // Remove "(edited)" from the actual message text
+                val cleanMessage = actualMessage.replace(" (edited)", "")
+                
+                // Show reply context if it's a reply
+                if (isReply && replyPart.isNotBlank()) {
+                    Surface(
+                        color = if (isFromAdmin) 
+                            MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.1f) 
+                        else 
+                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                Text(
+                            text = replyPart.removePrefix("↩️ "),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = bubbleText.copy(alpha = 0.7f),
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                }
+                
                 Row(
                     verticalAlignment = Alignment.Bottom
                 ) {
                     Text(
-                        text = message.text + "  ",
+                        text = cleanMessage,
                         style = MaterialTheme.typography.bodyMedium,
                         color = bubbleText
                     )
+                    Spacer(modifier = Modifier.width(4.dp))
                     Text(
                         text = SimpleDateFormat("HH:mm", Locale.getDefault()).format(message.timestamp.toDate()),
                         style = MaterialTheme.typography.labelSmall,
                         color = bubbleText.copy(alpha = 0.8f)
                     )
+                    // Show edited flag if message was edited
+                    if (message.text.contains(" (edited)")) {
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Text(
+                            text = "edited",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = bubbleText.copy(alpha = 0.6f),
+                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                        )
+                    }
                 }
             }
         }
@@ -334,5 +611,21 @@ fun ChatInputBar(
                 Icon(Icons.Default.Send, contentDescription = "Send")
             }
         }
+    }
+}
+
+fun formatDateHeader(dateString: String): String {
+    return try {
+        val date = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).parse(dateString)
+        val today = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+        val yesterday = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(System.currentTimeMillis() - 24 * 60 * 60 * 1000))
+        
+        when (dateString) {
+            today -> "Today"
+            yesterday -> "Yesterday"
+            else -> date?.let { SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(it) } ?: dateString
+        }
+    } catch (_: Exception) {
+        dateString
     }
 }

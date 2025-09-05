@@ -32,7 +32,11 @@ class ChatViewModel : ViewModel() {
             _isLoading.value = true
             _error.value = null
             try {
-                chatRepository.getMessagesByTask(context, taskId).collect { messageList ->
+                // Test table access first
+                val tableAccessOk = chatRepository.testTableAccess(context)
+                Log.d("AdminChatVM", "Table access test result: $tableAccessOk")
+                
+                chatRepository.getMessagesByTaskWithLocalChanges(context, taskId, _messages.value ?: emptyList()).collect { messageList ->
                     Log.d("AdminChatVM", "Emitting messages: count=" + messageList.size)
                     _messages.value = messageList
                 }
@@ -132,5 +136,92 @@ class ChatViewModel : ViewModel() {
     
     fun clearError() {
         _error.value = null
+    }
+    
+    fun diagnosePermissions(context: android.content.Context, messageId: String) {
+        viewModelScope.launch {
+            try {
+                val diagnostics = chatRepository.diagnosePermissions(context, messageId)
+                Log.d("AdminChatVM", "Permission Diagnostics for message $messageId:")
+                Log.d("AdminChatVM", diagnostics)
+            } catch (e: Exception) {
+                Log.e("AdminChatVM", "Diagnostic failed: ${e.message}")
+            }
+        }
+    }
+    
+    fun deleteMessage(context: android.content.Context, messageId: String) {
+        viewModelScope.launch {
+            Log.d("AdminChatVM", "Starting delete operation for message: $messageId")
+            
+            // Store original messages for potential rollback
+            val originalMessages = _messages.value.toList()
+            
+            // Optimistic UI update - remove immediately
+            _messages.value = _messages.value.filterNot { it.messageId == messageId }
+            
+            try {
+                val success = chatRepository.deleteMessage(context, messageId)
+                if (!success) {
+                    Log.e("AdminChatVM", "Delete operation failed for message: $messageId")
+                    _error.value = "Failed to delete message from server"
+                    // Rollback optimistic update
+                    _messages.value = originalMessages
+                    // Run diagnostics to understand why it failed
+                    diagnosePermissions(context, messageId)
+                } else {
+                    Log.d("AdminChatVM", "Delete operation successful for message: $messageId")
+                    // Add small delay to ensure Supabase operation is committed
+                    kotlinx.coroutines.delay(500)
+                }
+            } catch (e: Exception) {
+                Log.e("AdminChatVM", "Delete operation exception: ${e.message}")
+                _error.value = e.message ?: "Delete failed"
+                // Rollback optimistic update
+                _messages.value = originalMessages
+                // Run diagnostics to understand why it failed
+                diagnosePermissions(context, messageId)
+            }
+        }
+    }
+    
+    fun editMessage(context: android.content.Context, messageId: String, newText: String) {
+        viewModelScope.launch {
+            Log.d("AdminChatVM", "Starting edit operation for message: $messageId")
+            Log.d("AdminChatVM", "New text: $newText")
+            
+            // Store original messages for potential rollback
+            val originalMessages = _messages.value.toList()
+            
+            // Optimistic UI update - change text immediately
+            _messages.value = _messages.value.map { message ->
+                if (message.messageId == messageId) {
+                    message.copy(text = newText )
+                } else message
+            }
+            
+            try {
+                val success = chatRepository.editMessage(context, messageId, newText)
+                if (!success) {
+                    Log.e("AdminChatVM", "Edit operation failed for message: $messageId")
+                    _error.value = "Failed to edit message on server"
+                    // Rollback optimistic update
+                    _messages.value = originalMessages
+                    // Run diagnostics to understand why it failed
+                    diagnosePermissions(context, messageId)
+                } else {
+                    Log.d("AdminChatVM", "Edit operation successful for message: $messageId")
+                    // Add small delay to ensure Supabase operation is committed
+                    kotlinx.coroutines.delay(500)
+                }
+            } catch (e: Exception) {
+                Log.e("AdminChatVM", "Edit operation exception: ${e.message}")
+                _error.value = e.message ?: "Edit failed"
+                // Rollback optimistic update
+                _messages.value = originalMessages
+                // Run diagnostics to understand why it failed
+                diagnosePermissions(context, messageId)
+            }
+        }
     }
 }

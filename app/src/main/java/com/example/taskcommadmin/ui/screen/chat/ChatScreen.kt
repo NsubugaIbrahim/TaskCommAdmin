@@ -24,6 +24,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.navigation.NavController
 import com.example.taskcommadmin.data.model.ChatMessage
 import com.example.taskcommadmin.ui.viewmodel.ChatViewModel
+import com.example.taskcommadmin.data.constants.TaskStatus
 import java.text.SimpleDateFormat
 import java.util.*
 import com.example.taskcommadmin.data.SupabaseClientProvider
@@ -33,7 +34,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import android.util.Log
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ChatScreen(
     navController: NavController,
@@ -55,6 +56,8 @@ fun ChatScreen(
     var showEditDialog by remember { mutableStateOf(false) }
     var editText by remember { mutableStateOf("") }
     var replyToMessage by remember { mutableStateOf<ChatMessage?>(null) }
+    var showStatusDialog by remember { mutableStateOf(false) }
+    var currentTaskStatus by remember { mutableStateOf("") }
     
     LaunchedEffect(taskId) {
         Log.d("AdminChatScreen", "Opening chat for task=" + taskId)
@@ -71,6 +74,7 @@ fun ChatScreen(
                 }.decodeList<TaskHeaderRow>()
             }.firstOrNull()
             taskTitle = taskRow?.title ?: ""
+            currentTaskStatus = taskRow?.status ?: TaskStatus.PENDING
             val instructionId = taskRow?.instructionId
             if (!instructionId.isNullOrBlank()) {
                 val userId = withContext(Dispatchers.IO) {
@@ -138,6 +142,11 @@ fun ChatScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = { 
+                        showStatusDialog = true
+                    }) {
+                        Icon(Icons.Default.CheckCircle, contentDescription = "Change Task Status")
+                    }
                     IconButton(onClick = { /* Export chat */ }) {
                         Icon(Icons.Default.Share, contentDescription = "Export")
                     }
@@ -429,6 +438,68 @@ fun ChatScreen(
                 }
             }
         }
+        
+        // Task Status Selection Dialog
+        if (showStatusDialog) {
+            AlertDialog(
+                onDismissRequest = { showStatusDialog = false },
+                title = { 
+                    Text("Change Task Status") 
+                },
+                text = {
+                    Column {
+                        Text(
+                            text = "Current status: ${TaskStatus.getStatusDisplayName(currentTaskStatus)}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(bottom = 16.dp)
+                        )
+                        Text(
+                            text = "Select new status:",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                        TaskStatus.ALL_STATUSES.forEach { status ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp)
+                                    .combinedClickable(
+                                        onClick = {
+                                            viewModel.updateTaskStatus(navController.context, taskId, status)
+                                            currentTaskStatus = status
+                                            showStatusDialog = false
+                                        }
+                                    ),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = TaskStatus.getStatusEmoji(status),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    modifier = Modifier.padding(end = 12.dp)
+                                )
+                                Text(
+                                    text = TaskStatus.getStatusDisplayName(status),
+                                    style = MaterialTheme.typography.bodyLarge
+                                )
+                                if (status == currentTaskStatus) {
+                                    Spacer(modifier = Modifier.weight(1f))
+                                    Icon(
+                                        Icons.Default.Check,
+                                        contentDescription = "Current status",
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showStatusDialog = false }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
     }
 }
 
@@ -437,7 +508,8 @@ fun ChatScreen(
 private data class TaskHeaderRow(
     val id: String? = null,
     @kotlinx.serialization.SerialName("instruction_id") val instructionId: String? = null,
-    @kotlinx.serialization.SerialName("title") val title: String? = null
+    @kotlinx.serialization.SerialName("title") val title: String? = null,
+    val status: String? = null
 )
 
 @SuppressLint("UnsafeOptInUsageError")

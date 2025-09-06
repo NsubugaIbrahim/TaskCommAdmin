@@ -1,5 +1,6 @@
 package com.example.taskcommadmin.data.model
 
+import com.example.taskcommadmin.data.constants.TaskStatus
 import com.google.firebase.Timestamp
 
 data class Task(
@@ -8,7 +9,7 @@ data class Task(
     val adminId: String = "",
     val title: String = "",
     val description: String = "",
-    val status: String = "pending", // pending, in_progress, completed
+    val status: String = TaskStatus.PENDING, // pending, in_progress, completed
     val priority: String = "medium", // low, medium, high
     val dueDate: Timestamp? = null,
     val createdAt: Timestamp = Timestamp.now(),

@@ -15,6 +15,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.example.taskcommadmin.ui.navigation.Screen
 import com.example.taskcommadmin.data.SupabaseClientProvider
+import com.example.taskcommadmin.data.constants.TaskStatus
 import io.github.jan.supabase.postgrest.Postgrest
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -151,7 +152,7 @@ fun InstructionTaskListScreen(
                                 title = title,
                                 description = description,
                                 priority = priority,
-                                status = "pending"
+                                status = TaskStatus.PENDING
                             ))
                         }
                         // refresh
@@ -208,7 +209,7 @@ private fun TaskRowCard(row: TaskRow, onClick: () -> Unit) {
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    LocalStatusChip(row.status ?: "pending")
+                    LocalStatusChip(row.status ?: TaskStatus.PENDING)
                     Spacer(modifier = Modifier.width(8.dp))
                     LocalPriorityChip(row.priority ?: "medium")
                 }
@@ -226,9 +227,9 @@ private fun TaskRowCard(row: TaskRow, onClick: () -> Unit) {
 @Composable
 private fun LocalStatusChip(status: String) {
     val (backgroundColor, textColor) = when (status) {
-        "pending" -> MaterialTheme.colorScheme.tertiary to MaterialTheme.colorScheme.onTertiary
-        "in_progress" -> MaterialTheme.colorScheme.primary to MaterialTheme.colorScheme.onPrimary
-        "completed" -> MaterialTheme.colorScheme.secondary to MaterialTheme.colorScheme.onSecondary
+        TaskStatus.PENDING -> MaterialTheme.colorScheme.tertiary to MaterialTheme.colorScheme.onTertiary
+        TaskStatus.IN_PROGRESS -> MaterialTheme.colorScheme.primary to MaterialTheme.colorScheme.onPrimary
+        TaskStatus.COMPLETED -> MaterialTheme.colorScheme.secondary to MaterialTheme.colorScheme.onSecondary
         else -> MaterialTheme.colorScheme.surfaceVariant to MaterialTheme.colorScheme.onSurfaceVariant
     }
     Surface(color = backgroundColor, shape = MaterialTheme.shapes.small) {

@@ -5,6 +5,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.taskcommadmin.data.model.ChatMessage
 import com.example.taskcommadmin.data.repository.ChatRepository
+import com.example.taskcommadmin.data.SupabaseClientProvider
+import com.example.taskcommadmin.data.constants.TaskStatus
+import io.github.jan.supabase.postgrest.Postgrest
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerialName
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -221,6 +228,44 @@ class ChatViewModel : ViewModel() {
                 _messages.value = originalMessages
                 // Run diagnostics to understand why it failed
                 diagnosePermissions(context, messageId)
+            }
+        }
+    }
+    
+    fun updateTaskStatus(context: android.content.Context, taskId: String, newStatus: String) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            _error.value = null
+            try {
+                val client = SupabaseClientProvider.getClient(context)
+                val postgrest = client.pluginManager.getPlugin(Postgrest)
+                
+                withContext(Dispatchers.IO) {
+                    postgrest["tasks"].update(mapOf(
+                        "status" to newStatus
+                    )) {
+                        filter { eq("id", taskId) }
+                    }
+                }
+                
+                Log.d("AdminChatVM", "Task status updated successfully: $taskId -> $newStatus")
+                
+                // Send a system message to notify about status change
+                val statusMessage = "${TaskStatus.getStatusEmoji(newStatus)} Task marked as ${TaskStatus.getStatusDisplayName(newStatus).lowercase()}"
+                
+                sendTextMessage(
+                    context = context,
+                    taskId = taskId,
+                    text = statusMessage,
+                    senderId = "system",
+                    senderName = "System"
+                )
+                
+            } catch (e: Exception) {
+                Log.e("AdminChatVM", "Update task status failed: ${e.message}")
+                _error.value = e.message ?: "Failed to update task status"
+            } finally {
+                _isLoading.value = false
             }
         }
     }

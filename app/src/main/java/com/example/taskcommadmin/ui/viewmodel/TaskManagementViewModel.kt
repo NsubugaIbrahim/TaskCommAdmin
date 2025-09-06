@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.taskcommadmin.data.model.Task
 import com.example.taskcommadmin.data.repository.TaskRepository
 import com.example.taskcommadmin.data.SupabaseClientProvider
+import com.example.taskcommadmin.data.constants.TaskStatus
 import io.github.jan.supabase.postgrest.Postgrest
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
@@ -178,7 +179,7 @@ private data class TaskRow(
         adminId = adminId ?: "",
         title = title ?: "",
         description = description ?: "",
-        status = status ?: "pending",
+        status = status ?: TaskStatus.PENDING,
         priority = priority ?: "medium"
     )
     companion object {

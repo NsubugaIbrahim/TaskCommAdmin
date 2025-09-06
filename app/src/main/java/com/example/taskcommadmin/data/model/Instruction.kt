@@ -1,5 +1,6 @@
 package com.example.taskcommadmin.data.model
 
+import com.example.taskcommadmin.data.constants.TaskStatus
 import com.google.firebase.Timestamp
 
 data class Instruction(
@@ -8,5 +9,5 @@ data class Instruction(
     val title: String = "",
     val description: String = "",
     val createdAt: Timestamp = Timestamp.now(),
-    val status: String = "pending" // pending, in_progress, completed
+    val status: String = TaskStatus.PENDING // pending, in_progress, completed
 )

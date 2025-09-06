@@ -12,9 +12,11 @@ import com.example.taskcommadmin.ui.screen.search.SearchScreen
 import com.example.taskcommadmin.ui.screen.task.TaskDetailScreen
 import com.example.taskcommadmin.ui.screen.task.TaskListScreen
 import com.example.taskcommadmin.ui.screen.task.InstructionTaskListScreen
+import com.example.taskcommadmin.ui.screen.task.AllTasksScreen
 import com.example.taskcommadmin.ui.screen.user.UserDetailScreen
 import com.example.taskcommadmin.ui.screen.user.UserListScreen
 import com.example.taskcommadmin.ui.screen.instruction.InstructionListScreen
+import com.example.taskcommadmin.ui.screen.instruction.AllInstructionsScreen
 
 @Composable
 fun NavGraph(navController: NavHostController) {
@@ -101,6 +103,14 @@ fun NavGraph(navController: NavHostController) {
                 taskId = taskId
             )
         }
+        
+        composable(Screen.AllTasks.route) {
+            AllTasksScreen(navController = navController)
+        }
+        
+        composable(Screen.AllInstructions.route) {
+            AllInstructionsScreen(navController = navController)
+        }
     }
 }
 
@@ -116,4 +126,6 @@ sealed class Screen(val route: String) {
     object Chat : Screen("chat")
     object InstructionList : Screen("instruction_list")
     object InstructionTaskList : Screen("instruction_task_list")
+    object AllTasks : Screen("all_tasks")
+    object AllInstructions : Screen("all_instructions")
 }

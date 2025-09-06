@@ -214,9 +214,9 @@ fun DashboardScreen(
                 // Task Management Card
                 DashboardCard(
                     title = "Task Management",
-                    description = "Create and manage tasks for users",
+                    description = "View and manage all tasks",
                     icon = Icons.Default.Assignment,
-                    onClick = { /* Navigate to task management */ }
+                    onClick = { navController.navigate(Screen.AllTasks.route) }
                 )
                 
                 // Instructions Overview Card
@@ -224,15 +224,7 @@ fun DashboardScreen(
                     title = "Instructions Overview",
                     description = "View all instructions from users",
                     icon = Icons.Default.Description,
-                    onClick = { /* Navigate to instructions overview */ }
-                )
-                
-                // Communication Center Card
-                DashboardCard(
-                    title = "Communication Center",
-                    description = "Chat with users and manage communications",
-                    icon = Icons.Default.Chat,
-                    onClick = { /* Navigate to communication center */ }
+                    onClick = { navController.navigate(Screen.AllInstructions.route) }
                 )
                 
                 // Search Card

@@ -13,81 +13,55 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
-import com.example.taskcommadmin.data.SupabaseClientProvider
-import io.github.jan.supabase.postgrest.Postgrest
-import kotlinx.serialization.Serializable
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import com.example.taskcommadmin.data.repository.SearchResults
+import com.example.taskcommadmin.data.repository.UserSearchResult
+import com.example.taskcommadmin.data.repository.TaskSearchResult
+import com.example.taskcommadmin.data.repository.InstructionSearchResult
+import com.example.taskcommadmin.data.repository.ChatMessageSearchResult
+import com.example.taskcommadmin.ui.viewmodel.SearchViewModel
+import com.example.taskcommadmin.ui.navigation.Screen
 import java.text.SimpleDateFormat
 import java.util.*
-
-@Serializable
-private data class UserSearchResult(
-    val id: String? = null,
-    val email: String? = null,
-    val name: String? = null,
-    val role: String? = null
-)
-
-@Serializable
-private data class TaskSearchResult(
-    val id: String? = null,
-    val title: String? = null,
-    val description: String? = null,
-    val status: String? = null,
-    val created_at: String? = null
-)
-
-@Serializable
-private data class InstructionSearchResult(
-    val id: String? = null,
-    val title: String? = null,
-    val description: String? = null,
-    val status: String? = null,
-    val user_id: String? = null,
-    val created_at: String? = null
-)
-
-@Serializable
-private data class ChatMessageSearchResult(
-    val id: String? = null,
-    val text: String? = null,
-    val sender_role: String? = null,
-    val task_id: String? = null,
-    val created_at: String? = null
-)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchScreen(
-    navController: NavController
+    navController: NavController,
+    searchViewModel: SearchViewModel = SearchViewModel()
 ) {
     val context = LocalContext.current
     var searchQuery by remember { mutableStateOf("") }
-    var searchResults by remember { mutableStateOf<SearchResults?>(null) }
-    var isLoading by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableStateOf(0) }
+    
+    val searchResults by searchViewModel.searchResults.collectAsState()
+    val isLoading by searchViewModel.isLoading.collectAsState()
+    val error by searchViewModel.error.collectAsState()
     
     val tabs = listOf("All", "Users", "Tasks", "Instructions", "Messages")
     
-    val performSearch = { query: String ->
-        if (query.isNotBlank()) {
-            isLoading = true
-            // Perform search in background
-            // This would be implemented with actual search logic
-            searchResults = SearchResults(
-                users = emptyList(),
-                tasks = emptyList(),
-                instructions = emptyList(),
-                messages = emptyList()
-            )
-            isLoading = false
+    LaunchedEffect(searchQuery) {
+        if (searchQuery.length >= 2) {
+            when (selectedTab) {
+                0 -> searchViewModel.search(searchQuery, context)
+                1 -> searchViewModel.searchUsers(searchQuery, context)
+                2 -> searchViewModel.searchTasks(searchQuery, context)
+                3 -> searchViewModel.searchInstructions(searchQuery, context)
+                4 -> searchViewModel.searchMessages(searchQuery, context)
+            }
+        } else {
+            searchViewModel.clearResults()
         }
     }
     
-    LaunchedEffect(searchQuery) {
+    LaunchedEffect(selectedTab) {
         if (searchQuery.length >= 2) {
-            performSearch(searchQuery)
+            when (selectedTab) {
+                0 -> searchViewModel.search(searchQuery, context)
+                1 -> searchViewModel.searchUsers(searchQuery, context)
+                2 -> searchViewModel.searchTasks(searchQuery, context)
+                3 -> searchViewModel.searchInstructions(searchQuery, context)
+                4 -> searchViewModel.searchMessages(searchQuery, context)
+            }
         }
     }
     
@@ -140,6 +114,24 @@ fun SearchScreen(
                 }
             }
             
+            // Error Display
+            error?.let { errorMessage ->
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer
+                    )
+                ) {
+                    Text(
+                        text = errorMessage,
+                        modifier = Modifier.padding(16.dp),
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                }
+            }
+            
             // Search Results
             if (isLoading) {
                 Box(
@@ -173,7 +165,7 @@ fun SearchScreen(
                         )
                     }
                 }
-            } else {
+            } else if (searchResults != null) {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(16.dp),
@@ -237,33 +229,159 @@ fun SearchScreen(
                                         MessageSearchItem(message = message, navController = navController)
                                     }
                                 }
+                                
+                                if (results.users.isEmpty() && results.tasks.isEmpty() && 
+                                    results.instructions.isEmpty() && results.messages.isEmpty()) {
+                                    item {
+                                        Box(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                Icon(
+                                                    Icons.Default.SearchOff,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(64.dp),
+                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                                Spacer(modifier = Modifier.height(16.dp))
+                                                Text(
+                                                    text = "No results found",
+                                                    style = MaterialTheme.typography.titleMedium,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                                Text(
+                                                    text = "Try a different search term",
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                         1 -> { // Users
                             searchResults?.users?.let { users ->
-                                items(users) { user ->
-                                    UserSearchItem(user = user, navController = navController)
+                                if (users.isEmpty()) {
+                                    item {
+                                        Box(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                Icon(
+                                                    Icons.Default.PersonOff,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(64.dp),
+                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                                Spacer(modifier = Modifier.height(16.dp))
+                                                Text(
+                                                    text = "No users found",
+                                                    style = MaterialTheme.typography.titleMedium,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    items(users) { user ->
+                                        UserSearchItem(user = user, navController = navController)
+                                    }
                                 }
                             }
                         }
                         2 -> { // Tasks
                             searchResults?.tasks?.let { tasks ->
-                                items(tasks) { task ->
-                                    TaskSearchItem(task = task, navController = navController)
+                                if (tasks.isEmpty()) {
+                                    item {
+                                        Box(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                Icon(
+                                                    Icons.Default.AssignmentLate,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(64.dp),
+                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                                Spacer(modifier = Modifier.height(16.dp))
+                                                Text(
+                                                    text = "No tasks found",
+                                                    style = MaterialTheme.typography.titleMedium,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    items(tasks) { task ->
+                                        TaskSearchItem(task = task, navController = navController)
+                                    }
                                 }
                             }
                         }
                         3 -> { // Instructions
                             searchResults?.instructions?.let { instructions ->
-                                items(instructions) { instruction ->
-                                    InstructionSearchItem(instruction = instruction, navController = navController)
+                                if (instructions.isEmpty()) {
+                                    item {
+                                        Box(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                Icon(
+                                                    Icons.Default.Description,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(64.dp),
+                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                                Spacer(modifier = Modifier.height(16.dp))
+                                                Text(
+                                                    text = "No instructions found",
+                                                    style = MaterialTheme.typography.titleMedium,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    items(instructions) { instruction ->
+                                        InstructionSearchItem(instruction = instruction, navController = navController)
+                                    }
                                 }
                             }
                         }
                         4 -> { // Messages
                             searchResults?.messages?.let { messages ->
-                                items(messages) { message ->
-                                    MessageSearchItem(message = message, navController = navController)
+                                if (messages.isEmpty()) {
+                                    item {
+                                        Box(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                Icon(
+                                                    Icons.Default.ChatBubbleOutline,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(64.dp),
+                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                                Spacer(modifier = Modifier.height(16.dp))
+                                                Text(
+                                                    text = "No messages found",
+                                                    style = MaterialTheme.typography.titleMedium,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    items(messages) { message ->
+                                        MessageSearchItem(message = message, navController = navController)
+                                    }
                                 }
                             }
                         }
@@ -280,7 +398,7 @@ private fun UserSearchItem(
     navController: NavController
 ) {
     Card(
-        onClick = { navController.navigate("user_detail/${user.id}") },
+        onClick = { navController.navigate(Screen.UserDetail.route + "/${user.id}") },
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
@@ -320,7 +438,7 @@ private fun TaskSearchItem(
     navController: NavController
 ) {
     Card(
-        onClick = { navController.navigate("task_detail/${task.id}") },
+        onClick = { navController.navigate(Screen.TaskDetail.route + "/${task.id}") },
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
@@ -361,7 +479,7 @@ private fun InstructionSearchItem(
     navController: NavController
 ) {
     Card(
-        onClick = { navController.navigate("instruction_list/${instruction.user_id}") },
+        onClick = { navController.navigate(Screen.InstructionList.route + "/${instruction.user_id}") },
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
@@ -402,7 +520,7 @@ private fun MessageSearchItem(
     navController: NavController
 ) {
     Card(
-        onClick = { navController.navigate("chat/${message.task_id}") },
+        onClick = { navController.navigate(Screen.Chat.route + "/${message.task_id}") },
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
@@ -437,9 +555,3 @@ private fun MessageSearchItem(
     }
 }
 
-private data class SearchResults(
-    val users: List<UserSearchResult>,
-    val tasks: List<TaskSearchResult>,
-    val instructions: List<InstructionSearchResult>,
-    val messages: List<ChatMessageSearchResult>
-)
